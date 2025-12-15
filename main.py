@@ -5,43 +5,38 @@ load_dotenv()
 from langchain_classic import hub
 from langchain_classic.agents import AgentExecutor
 from langchain_classic.agents.react.agent import create_react_agent
+from langchain_core.prompts import PromptTemplate
+from langchain_core.runnables import RunnableLambda
 from langchain_openai import ChatOpenAI
 from langchain_tavily import TavilySearch
-from langchain_core.prompts import PromptTemplate
+from prompt import REACT_PROMPT_WITH_FORMAT_INSTRUCTIONS
+from schemas import AgentResponse
 
 tools = [TavilySearch()]
 llm = ChatOpenAI(model="gpt-4")
-template = """ 
-Answer the following questions as best you can. You have access to the following tools:
+structured_llm = llm.with_structured_output(AgentResponse)
+react_prompt_with_format_instruction = PromptTemplate(
+    template=REACT_PROMPT_WITH_FORMAT_INSTRUCTIONS,
+    input_variables=["input", "agent_scratchpad", "tool_names"]
+).partial(format_instructions="")
 
-{tools}
 
-Use the following format:
+agent = create_react_agent(
+    llm=llm, 
+    tools=tools, 
+    prompt=react_prompt_with_format_instruction
+)
 
-Question: the input question you must answer
-Thought: you should always think about what to do
-Action: the action to take, should be one of [{tool_names}]
-Action Input: the input to the action
-Observation: the result of the action
-... (this Thought/Action/Action Input/Observation can repeat N times)
-Thought: I now know the final answer
-Final Answer: the final answer to the original input question
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+extract_output = RunnableLambda(lambda x: x["output"])
+chain = agent_executor | extract_output | structured_llm
 
-Begin!
 
-Question: {input}
-Thought:{agent_scratchpad}"""
-
-react_prompt = PromptTemplate.from_template(template)
-agent = create_react_agent(llm=llm,tools=tools,prompt=react_prompt)
-
-agent_executor = AgentExecutor(agent=agent, tools=tools,verbose=True)
-chain = agent_executor
 
 def main():
     result = chain.invoke(
         input={
-            "input": "search for 3 job postings for an AI engineer using langchain in kuala lumpur malaysia on linkedin and list their details",
+            "input": "search for 3 job postings for a data engineer using databricks in kuala lumpur malaysia on linkedin and list their details",
         }
     )
     print(result)
